@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "1032095210983",
+    "firebase_url": "https://jordannow-547ee-default-rtdb.firebaseio.com",
+    "project_id": "jordannow-547ee",
+    "storage_bucket": "jordannow-547ee.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1032095210983:android:552f23a1ac30f175b53142",
+        "android_client_info": {
+          "package_name": "com.example.jordannow"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1032095210983-h6lau3emumnb1pq0ioah7jqgcmd8lcug.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADZxIJPw27XxuCxyFx9w0tPObh3PWFR0s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1032095210983-h6lau3emumnb1pq0ioah7jqgcmd8lcug.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
