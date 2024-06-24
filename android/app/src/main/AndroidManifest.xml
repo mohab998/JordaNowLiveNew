@@ -44,4 +44,5 @@
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
+    <uses-feature android:name="android.software.leanback" android:required="true"/>
 </manifest>

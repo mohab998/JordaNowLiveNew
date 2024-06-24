@@ -5,9 +5,11 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: FirebaseOptions(
       apiKey: 'AIzaSyADZxIJPw27XxuCxyFx9w0tPObh3PWFR0s',
@@ -18,6 +20,13 @@ void main() async {
     ),
   );
   runApp(MyApp());
+}
+void enableWakelock() {
+  WakelockPlus.enable();
+}
+
+void disableWakelock() {
+  WakelockPlus.disable();
 }
 
 class MyApp extends StatelessWidget {
@@ -34,20 +43,29 @@ class VideoPlayerScreen extends StatefulWidget {
   _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindingObserver {
+class _VideoPlayerScreenState extends State<VideoPlayerScreen>
+    with WidgetsBindingObserver {
   late VideoPlayerController _controller;
   late DatabaseReference _databaseReference;
   late ChewieController _chewieController;
+  FocusNode _focusNode = FocusNode();
   bool isLive = false;
-  String appName = "Jordan now TV";
+  bool isFullScreen = false;
+  Color videoRowColor = Colors.red; // Video row color
+  bool isLoading = true; // Track loading state
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     initializePlayer();
+    enableWakelock(); // Enable Wakelock when initializing the player
     _databaseReference = FirebaseDatabase.instance.ref().child('Url');
     loadVideoUrlFromFirebase();
+    _focusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
   }
 
   void initializePlayer() {
@@ -56,7 +74,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       videoPlayerController: _controller,
       autoPlay: true,
       looping: true,
-      placeholder: Center(child: CircularProgressIndicator()),
+      placeholder: Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(videoRowColor),
+        ),
+      ),
+      // Set initial video row color
+      materialProgressColors: ChewieProgressColors(
+        playedColor: videoRowColor,
+        handleColor: videoRowColor,
+        backgroundColor: Colors.transparent,
+        bufferedColor: videoRowColor.withOpacity(0.5),
+      ),
     );
   }
 
@@ -65,7 +94,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       if (event.snapshot.value != null) {
         String videoUrl = event.snapshot.value.toString();
         if (videoUrl.isNotEmpty) {
-          _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+          // Dispose of old controller
+          _controller.dispose();
+          _chewieController.dispose();
+          // Initialize new controller
+          _controller = VideoPlayerController.network(videoUrl);
           _controller.initialize().then((_) {
             setState(() {
               _controller.play();
@@ -73,12 +106,30 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
                 videoPlayerController: _controller,
                 autoPlay: true,
                 looping: true,
-                placeholder: Center(child: CircularProgressIndicator()),
+                placeholder: Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(videoRowColor),
+                  ),
+                ),
+                // Ensure video row color stays red
+                materialProgressColors: ChewieProgressColors(
+                  playedColor: videoRowColor,
+                  handleColor: videoRowColor,
+                  backgroundColor: Colors.transparent,
+                  bufferedColor: videoRowColor.withOpacity(0.5),
+                ),
               );
+              isLoading = false; // Set loading state to false after initialization
             });
+          }).catchError((error) {
+            // Handle error
+            print('Error initializing video player: $error');
           });
         }
       }
+    }).catchError((error) {
+      // Handle error
+      print('Error loading video URL from Firebase: $error');
     });
   }
 
@@ -88,17 +139,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     switch (state) {
       case AppLifecycleState.resumed:
         _controller.play();
+        enableWakelock(); // Enable Wakelock when the app is resumed
         break;
       case AppLifecycleState.paused:
         _controller.pause();
+        disableWakelock(); // Disable Wakelock when the app is paused
         break;
       case AppLifecycleState.inactive:
-      // App is in an inactive state and might be killed
+        disableWakelock(); // Disable Wakelock when the app is paused
         break;
       case AppLifecycleState.detached:
-      // App is detached from the view hierarchy
+        disableWakelock(); // Disable Wakelock when the app is paused
         break;
       case AppLifecycleState.hidden:
+        disableWakelock(); // Disable Wakelock when the app is paused
         break;
     }
   }
@@ -106,18 +160,26 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    disableWakelock(); // Disable Wakelock when disposing the screen
     _controller.dispose();
     _chewieController.dispose();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  void toggleFullScreen() {
+    setState(() {
+      isFullScreen = !isFullScreen;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: RawKeyboardListener(
-        focusNode: FocusNode(),
+        focusNode: _focusNode,
         onKey: (event) {
-          if (event is KeyDownEvent) {
+          if (event is RawKeyDownEvent) {
             if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
               _controller.seekTo(_controller.value.position + Duration(seconds: 10));
             } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
@@ -134,33 +196,36 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
           }
         },
         child: Center(
-          child: _chewieController != null && _chewieController.videoPlayerController.value.isInitialized
-              ? Stack(
+          child: Stack(
             children: [
-              Chewie(
+              _chewieController != null && _chewieController.videoPlayerController.value.isInitialized
+                  ? Chewie(
                 controller: _chewieController,
-              ),
-              Positioned(
-                bottom: 16,
-                right: 16,
-                child: IconButton(
-                  icon: SvgPicture.asset(
-                    'assets/icons/JordanNowIcon.png',
-                    width: 24,
-                    height: 24,
-                    color: Colors.red,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      isLive = true;
-                      _controller.seekTo(Duration(seconds: 0));
-                    });
-                  },
+              )
+                  : isLoading
+                  ? Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(videoRowColor),
                 ),
-              ),
+              )
+                  : Container(),
+              if (isFullScreen)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: toggleFullScreen,
+                    child: Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: _controller.value.aspectRatio,
+                          child: VideoPlayer(_controller),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
-          )
-              : CircularProgressIndicator(),
+          ),
         ),
       ),
     );
